@@ -1,91 +1,102 @@
-import time
+import torch
 import streamlit as st
-from inference import load_artifacts, greedy_translate
+from translator import load_model, translate
 
+# ============================================================
+# CONFIG — carpeta con todos los archivos del modelo Marian
+# ============================================================
+MODEL_DIR = "checkpoints"   # debe contener .pth/.bin + tokenizer_config.json, etc.
+
+# ============================================================
+# CARGA DEL MODELO (cacheado)
+# ============================================================
+@st.cache_resource(show_spinner="Cargando modelo...")
+def get_model():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, tokenizer = load_model(MODEL_DIR, device=device)
+    return model, tokenizer, device
+
+
+# ============================================================
+# UI
+# ============================================================
 st.set_page_config(
     page_title="Traductor ES → EN",
-    page_icon="🌍",
+    page_icon="🌐",
     layout="centered",
 )
 
-st.title("🌍 Traductor neuronal español → inglés")
-st.caption("Demo de inferencia con Transformer pequeño en PyTorch")
-
-with st.sidebar:
-    st.header("Configuración")
-    checkpoint_path = st.text_input("Checkpoint", value="checkpoints/best_transformer.pth")
-    tokenizer_path = st.text_input("Tokenizer JSON", value="tokenizer_es_en/tokenizer_bpe8k.json")
-    max_source_len = st.slider("Longitud máxima de entrada", 32, 256, 128, 16)
-    max_new_tokens = st.slider("Máximo de tokens generados", 10, 150, 80, 10)
-    force_cpu = st.checkbox("Forzar CPU", value=True)
-
-@st.cache_resource
-def cached_load(checkpoint_path: str, tokenizer_path: str, force_cpu: bool):
-    return load_artifacts(checkpoint_path, tokenizer_path, force_cpu)
+st.title("🌐 Traductor Español → Inglés")
+st.caption("MarianMT · Helsinki-NLP · cargado localmente")
 
 try:
-    artifacts = cached_load(checkpoint_path, tokenizer_path, force_cpu)
-    st.success(f"Modelo cargado en: {artifacts['device']}")
+    model, tokenizer, device = get_model()
+    device_label = "GPU (CUDA)" if device == "cuda" else "CPU"
+    st.sidebar.success(f"Modelo cargado · {device_label}")
 except Exception as e:
-    st.error(f"No se pudo cargar el modelo o tokenizer: {e}")
+    st.error(f"❌ Error al cargar el modelo: {e}")
     st.stop()
 
-text_input = st.text_area(
-    "Texto en español",
-    value="Hola, este es un proyecto universitario de traducción automática neuronal.",
-    height=150,
-)
+# Sidebar
+with st.sidebar:
+    st.header("Información del modelo")
+    st.markdown(
+        """
+        - **Arquitectura**: MarianMT (HuggingFace)  
+        - **Dirección**: ES → EN  
+        - **Tokenizer**: SentencePiece (source/target .spm)  
+        - **Cargado desde**: carpeta local `checkpoints/`  
+        """
+    )
 
-col1, col2 = st.columns(2)
-translate_btn = col1.button("Traducir", use_container_width=True)
-clear_btn = col2.button("Limpiar", use_container_width=True)
+# ── Área principal ──────────────────────────────────────────
+col1, col2 = st.columns(2, gap="medium")
 
-if clear_btn:
-    st.rerun()
+with col1:
+    st.subheader("🇪🇸 Español")
+    input_text = st.text_area(
+        label="input",
+        placeholder="Escribe o pega el texto aquí...",
+        height=380,
+        label_visibility="collapsed",
+    )
+
+with col2:
+    st.subheader("🇬🇧 Inglés")
+    result_box = st.empty()
+
+translate_btn = st.button("Traducir ▶", type="primary", use_container_width=True)
 
 if translate_btn:
-    if not text_input.strip():
-        st.warning("Ingresa un texto.")
-        st.stop()
+    text = input_text.strip()
+    if not text:
+        st.warning("Escribe algo antes de traducir.")
+    else:
+        with st.spinner("Traduciendo..."):
+            result = translate(
+                text=text,
+                model=model,
+                tokenizer=tokenizer,
+                device=device,
+            )
 
-    start = time.perf_counter()
-
-    try:
-        translation, output_ids = greedy_translate(
-            text=text_input.strip(),
-            model=artifacts["model"],
-            tokenizer=artifacts["tokenizer"],
-            device=artifacts["device"],
-            pad_id=artifacts["pad_id"],
-            bos_id=artifacts["bos_id"],
-            eos_id=artifacts["eos_id"],
-            max_source_len=max_source_len,
-            max_new_tokens=max_new_tokens,
-        )
-
-        elapsed = time.perf_counter() - start
-
-        st.subheader("Traducción al inglés")
-        st.write(translation if translation.strip() else "[salida vacía]")
-
-        with st.expander("Detalles"):
-            st.write(f"Tiempo: {elapsed:.4f} s")
-            st.write(f"IDs generados: {output_ids}")
-
-    except Exception as e:
-        st.error(f"Error durante la inferencia: {e}")
-
-st.markdown("---")
-st.subheader("Ejemplos")
-examples = [
-    "Buenos días, necesito ayuda con mi tarea.",
-    "La traducción automática neuronal puede fallar en frases ambiguas.",
-    "Nosotros entrenamos un Transformer pequeño para español e inglés."
-]
-
-for i, example in enumerate(examples, start=1):
-    if st.button(f"Usar ejemplo {i}"):
-        st.session_state["example_text"] = example
-
-if "example_text" in st.session_state:
-    st.info(st.session_state["example_text"])
+        with result_box.container():
+            st.markdown(
+                f"""
+                <div style="
+                    background-color: #1e2130;
+                    border: 1px solid #3a3f5c;
+                    border-radius: 8px;
+                    padding: 12px 16px;
+                    min-height: 380px;
+                    font-size: 15px;
+                    line-height: 1.6;
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
+                    color: #e8eaf6;
+                ">
+{result}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
