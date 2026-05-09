@@ -37,17 +37,7 @@ except Exception as e:
     st.error(f"❌ Error al cargar el modelo: {e}")
     st.stop()
 
-# Sidebar
-with st.sidebar:
-    st.header("Información del modelo")
-    st.markdown(
-        """
-        - **Arquitectura**: MarianMT (HuggingFace)  
-        - **Dirección**: ES → EN  
-        - **Tokenizer**: SentencePiece (source/target .spm)  
-        - **Cargado desde**: carpeta local `checkpoints/`  
-        """
-    )
+
 
 # ── Área principal ──────────────────────────────────────────
 col1, col2 = st.columns(2, gap="medium")

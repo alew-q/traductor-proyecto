@@ -24,4 +24,4 @@ Thumbs.db
 
 # Optional large files generated locally
 *.tmp
-*.pth
+.pth
