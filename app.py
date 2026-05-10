@@ -27,7 +27,6 @@ st.set_page_config(
 )
 
 st.title("🌐 Traductor Español → Inglés")
-st.caption("MarianMT · Helsinki-NLP · cargado localmente")
 
 try:
     model, tokenizer, device = get_model()
